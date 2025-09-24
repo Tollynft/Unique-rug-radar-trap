@@ -1,0 +1,6 @@
+name: UniqueRugRadar
+description: Test trap monitoring ERC20 totalSupply drops ≥15%
+contract: contracts/UniqueRugRadar.sol
+functions:
+  - collect
+  - shouldRespond
