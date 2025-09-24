@@ -1,0 +1,4 @@
+name = "UniqueRugRadar"
+version = "0.1.0"
+description = "Drosera test trap that flags totalSupply drops ≥15% for ERC20 tokens."
+authors = ["Tolly_nft"]
