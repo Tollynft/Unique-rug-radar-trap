@@ -1,32 +1,65 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
 
-/// @title UniqueRugRadar - Drosera Test Trap
-/// @notice Test-only trap for detecting unusual changes in ERC20 totalSupply.
-contract UniqueRugRadar {
-    uint256 public lastSupply;
+/// @title Drosera Trap Interface
+interface ITrap {
+    function collect() external view returns (bytes memory);
+    function shouldRespond(bytes[] calldata data) external pure returns (bool, bytes memory);
+}
 
-    struct SupplyData {
+/// @dev Minimal ERC20-like interface
+interface IERC20Like {
+    function totalSupply() external view returns (uint256);
+}
+
+/// @title Unique Rug Radar Trap
+/// @notice Detects large supply drops (possible rugs) in ERC20 tokens
+contract UniqueRugRadar is ITrap {
+    // Hardcoded token address (replace this with the target ERC20 when deploying)
+    IERC20Like constant TOKEN = IERC20Like(0x0000000000000000000000000000000000000000);
+
+    // 15% threshold in basis points (1500 = 15%)
+    uint256 constant THRESHOLD_BPS = 1500;
+
+    // Tag identifier for this trap
+    bytes4 constant TAG = 0x55525231; // "URR1"
+
+    struct Snap {
         uint256 supply;
-        uint256 timestamp;
+        uint256 blockNumber;
     }
 
-    SupplyData[] public history;
+    constructor() {}
 
-    /// @notice Collects the current totalSupply value (test placeholder).
-    function collect(uint256 currentSupply) external {
-        history.push(SupplyData(currentSupply, block.timestamp));
-        lastSupply = currentSupply;
+    /// @notice Collect current state (supply + block number)
+    function collect() external view override returns (bytes memory) {
+        return abi.encode(Snap({
+            supply: TOKEN.totalSupply(),
+            blockNumber: block.number
+        }));
     }
 
-    /// @notice Checks if supply dropped by ≥10% between last two collections.
-    function shouldRespond() external view returns (bool) {
-        if (history.length < 2) return false;
-        SupplyData memory prev = history[history.length - 2];
-        SupplyData memory curr = history[history.length - 1];
+    /// @notice Decide whether to respond (if supply dropped >=15%)
+    function shouldRespond(bytes[] calldata data) external pure override returns (bool, bytes memory) {
+        if (data.length < 2) return (false, "");
 
-        if (prev.supply == 0) return false;
-        uint256 drop = ((prev.supply - curr.supply) * 100) / prev.supply;
-        return drop >= 10;
+        Snap memory cur = abi.decode(data[0], (Snap));
+        Snap memory prev = abi.decode(data[1], (Snap));
+
+        // No response if supply increased or stayed same
+        if (prev.supply == 0 || cur.supply >= prev.supply) return (false, "");
+
+        uint256 drop = prev.supply - cur.supply;
+        uint256 dropBps = (drop * 10_000) / prev.supply;
+
+        if (dropBps >= THRESHOLD_BPS) {
+            // Payload encodes detection info
+            return (
+                true,
+                abi.encode(TAG, address(TOKEN), prev.supply, cur.supply, dropBps, cur.blockNumber)
+            );
+        }
+
+        return (false, "");
     }
 }
